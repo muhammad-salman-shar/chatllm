@@ -360,6 +360,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteMessage(id) }
     }
 
+
+    fun editAndResend(oldMsg: Message, newText: String) {
+        val conv = _state.value.activeConversation ?: return
+        val api = _state.value.activeApi ?: return
+        viewModelScope.launch {
+            val msgs = repo.listMessages(conv.id)
+            val idx = msgs.indexOfFirst { it.id == oldMsg.id }
+            if (idx < 0) return@launch
+            msgs.drop(idx).forEach { repo.deleteMessage(it.id) }
+            val userMsg = Message(conversationId = conv.id, role = "user", content = newText)
+            repo.insertMessage(userMsg)
+            val updated = repo.listMessages(conv.id)
+            val sys = api.systemPrompt.trim()
+            val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
+            val context = base + updated.map { it.role to it.content }
+            runStream(api, conv, context, newText)
+        }
+    }
+
     fun deleteBundle(id: String) {
         viewModelScope.launch { kc.deleteBundle(id) }
     }

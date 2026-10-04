@@ -297,9 +297,13 @@ private fun ChatScreen(vm: ChatViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+    var editingMessage by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Message?>(null) }
+    val clipboard = LocalContext.current.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+        as android.content.ClipboardManager
 
-    LaunchedEffect(state.messages.size, state.streamingText.isNotEmpty()) {
-        val total = state.messages.size + if (state.streamingText.isNotEmpty()) 1 else 0
+    LaunchedEffect(state.messages.size, state.streamingText.isNotEmpty(), state.isStreaming) {
+        val total = state.messages.size +
+            (if (state.streamingText.isNotEmpty() || state.isStreaming) 1 else 0)
         if (total > 0) {
             try { listState.scrollToItem(total - 1) } catch (_: Exception) {}
         }
@@ -313,11 +317,26 @@ private fun ChatScreen(vm: ChatViewModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(state.messages, key = { it.id }) { m ->
-                MessageBubble(m.role, m.content)
+                MessageBubble(
+                    role = m.role,
+                    content = m.content,
+                    onCopy = {
+                        clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText("msg", m.content)
+                        )
+                    },
+                    onEdit = if (m.role == "user") {
+                        { editingMessage = m }
+                    } else null
+                )
             }
             if (state.streamingText.isNotEmpty()) {
                 item(key = "streaming") {
-                    MessageBubble("assistant", state.streamingText)
+                    MessageBubble("assistant", state.streamingText, null, null)
+                }
+            } else if (state.isStreaming) {
+                item(key = "thinking") {
+                    ThinkingBubble()
                 }
             }
         }
@@ -360,8 +379,13 @@ private fun ChatScreen(vm: ChatViewModel) {
                 )
                 Spacer(Modifier.width(8.dp))
                 if (state.isStreaming) {
-                    IconButton(onClick = { vm.cancelStream() }) {
-                        Icon(Icons.Default.Close, "stop", tint = MaterialTheme.colorScheme.primary)
+                    FilledIconButton(
+                        onClick = { vm.cancelStream() },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = Color(0xFFEF4444)
+                        )
+                    ) {
+                        Icon(Icons.Default.Stop, "stop")
                     }
                 } else {
                     FilledIconButton(
@@ -380,30 +404,128 @@ private fun ChatScreen(vm: ChatViewModel) {
             }
         }
     }
+
+    editingMessage?.let { msg ->
+        var editText by remember(msg.id) { mutableStateOf(msg.content) }
+        AlertDialog(
+            onDismissRequest = { editingMessage = null },
+            title = { Text("Edit message") },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 8
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val t = editText.trim()
+                        if (t.isNotBlank() && t != msg.content) {
+                            vm.editAndResend(msg, t)
+                        }
+                        editingMessage = null
+                    },
+                    enabled = editText.isNotBlank()
+                ) { Text("Resend") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingMessage = null }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 @Composable
-private fun MessageBubble(role: String, content: String) {
-    val isUser = role == "user"
-    val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-             else MaterialTheme.colorScheme.surface
-    Box(Modifier.fillMaxWidth(), contentAlignment = align) {
+private fun ThinkingBubble() {
+    val dots = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(400)
+            dots.intValue = (dots.intValue + 1) % 4
+        }
+    }
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
         Surface(
-            color = bg,
-            shape = RoundedCornerShape(
-                topStart = 14.dp, topEnd = 14.dp,
-                bottomStart = if (isUser) 14.dp else 4.dp,
-                bottomEnd = if (isUser) 4.dp else 14.dp
-            ),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp,
+                bottomStart = 4.dp, bottomEnd = 14.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Text(content, Modifier.padding(10.dp),
-                style = MaterialTheme.typography.bodyMedium)
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Thinking",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                Spacer(Modifier.width(2.dp))
+                Text(".".repeat(dots.intValue),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun MessageBubble(
+    role: String,
+    content: String,
+    onCopy: (() -> Unit)?,
+    onEdit: (() -> Unit)?
+) {
+    val isUser = role == "user"
+    val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+    val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+             else MaterialTheme.colorScheme.surface
+    var menuOpen by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxWidth(), contentAlignment = align) {
+        Box {
+            Surface(
+                color = bg,
+                shape = RoundedCornerShape(
+                    topStart = 14.dp, topEnd = 14.dp,
+                    bottomStart = if (isUser) 14.dp else 4.dp,
+                    bottomEnd = if (isUser) 4.dp else 14.dp
+                ),
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .androidx.compose.foundation.combinedClickable(
+                        onClick = { },
+                        onLongClick = {
+                            if (onCopy != null || onEdit != null) menuOpen = true
+                        }
+                    )
+            ) {
+                Text(content, Modifier.padding(10.dp),
+                    style = MaterialTheme.typography.bodyMedium)
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false }
+            ) {
+                if (onCopy != null) {
+                    DropdownMenuItem(
+                        text = { Text("Copy") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                        onClick = { onCopy(); menuOpen = false }
+                    )
+                }
+                if (onEdit != null) {
+                    DropdownMenuItem(
+                        text = { Text("Edit & Resend") },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) },
+                        onClick = { onEdit(); menuOpen = false }
+                    )
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun MemoryDialog(
     bundles: List<SmgBundle>,
