@@ -49,6 +49,9 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE conversationId = :convId ORDER BY createdAt ASC")
     suspend fun listByConversation(convId: String): List<Message>
+    @Query("SELECT * FROM messages WHERE id IN (:ids)")
+    suspend fun listByIds(ids: List<String>): List<Message>
+
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(msg: Message)

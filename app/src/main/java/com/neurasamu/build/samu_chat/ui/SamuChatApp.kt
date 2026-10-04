@@ -1,6 +1,7 @@
 package com.neurasamu.build.samu_chat.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -124,6 +125,34 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                         }
                     },
                     actions = {
+                        // SMG toggle
+                        val smgColor = if (state.smgEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        Surface(
+                            color = smgColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.padding(end = 4.dp).clickable { vm.toggleSmg() }
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "SMG",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = smgColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (state.smgEnabled && state.bundleCount > 0) {
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        state.bundleCount.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = smgColor
+                                    )
+                                }
+                            }
+                        }
+
                         if (state.activeConversation != null) {
                             val pct = if (state.maxTokens > 0) state.usedTokens * 100 / state.maxTokens else 0
                             val chipColor = when {
