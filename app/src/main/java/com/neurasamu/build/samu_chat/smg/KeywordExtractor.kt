@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.toList
  */
 object KeywordExtractor {
 
-    private const val SYSTEM = """
+    private val SYSTEM = """
 You extract keywords from conversations. Given a user message and the assistant's reply, output ONLY 3-7 short keywords separated by commas.
 
 Rules:
