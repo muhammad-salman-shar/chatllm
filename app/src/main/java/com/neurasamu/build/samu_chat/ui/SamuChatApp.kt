@@ -2,6 +2,7 @@ package com.neurasamu.build.samu_chat.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -462,7 +463,7 @@ private fun MessageBubble(
                 ),
                 modifier = Modifier
                     .widthIn(max = 320.dp)
-                    .androidx.compose.foundation.combinedClickable(
+                    .combinedClickable(
                         onClick = { },
                         onLongClick = {
                             if (onCopy != null || onEdit != null) menuOpen = true
