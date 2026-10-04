@@ -5,8 +5,7 @@ import com.neurasamu.build.samu_chat.data.ApiConfig
 
 /**
  * Given a user query, find the top-K most relevant bundles for a conversation.
- * Strategy: extract query keywords (LLM preferred, heuristic fallback), then
- * match against stored bundle keywords using substring matching.
+ * Uses fuzzy word-by-word matching against stored bundle keywords.
  */
 class SmgRetriever(ctx: Context) {
 
@@ -17,16 +16,32 @@ class SmgRetriever(ctx: Context) {
         val score: Int
     )
 
+    companion object {
+        /** Words that make useless slip keywords. */
+        val JUNK_WORDS = setOf(
+            "assist", "help", "chat", "identity", "today", "hello", "hi", "hey",
+            "okay", "ok", "yes", "no", "please", "thanks", "thank", "user",
+            "assistant", "ai", "question", "answer", "reply", "response"
+        )
+
+        fun cleanKeywords(raw: String): List<String> {
+            return raw.lowercase()
+                .split(",", " ", ";", "|")
+                .map { it.trim().trim('"', '\'', '.', '-', ':') }
+                .filter { it.length >= 3 && it !in JUNK_WORDS }
+                .distinct()
+        }
+    }
+
     suspend fun retrieve(
         convId: String,
         userQuery: String,
         api: ApiConfig,
-        topK: Int = 2
+        topK: Int = 3
     ): List<Hit> {
         val bundles = kc.listBundles(convId)
         if (bundles.isEmpty()) return emptyList()
 
-        // Try LLM keyword extraction first, fallback to heuristic
         val queryKeywords = try {
             val llmResult = KeywordExtractor.extract(
                 userText = userQuery,
@@ -43,22 +58,54 @@ class SmgRetriever(ctx: Context) {
 
         if (queryKeywords.isBlank()) return emptyList()
 
-        val terms = queryKeywords.split(",").map { it.trim().lowercase() }
-            .filter { it.isNotBlank() && it.length >= 3 }
+        val queryTerms = cleanKeywords(queryKeywords)
+        if (queryTerms.isEmpty()) return emptyList()
 
-        if (terms.isEmpty()) return emptyList()
+        android.util.Log.i("SmgRetriever",
+            "Query terms: $queryTerms, bundles: ${bundles.size}")
 
-        // Score each bundle: how many query terms match its keywords
         val scored = bundles.mapNotNull { bundle ->
-            val bundleWords = bundle.keywords.lowercase().split(",")
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-            val score = terms.count { term ->
-                bundleWords.any { bw -> bw.contains(term) || term.contains(bw) }
+            val bundleTerms = cleanKeywords(bundle.keywords)
+            if (bundleTerms.isEmpty()) return@mapNotNull null
+
+            var score = 0
+            for (qt in queryTerms) {
+                for (bt in bundleTerms) {
+                    when {
+                        qt == bt -> score += 3                       // exact word
+                        qt.length >= 4 && bt.length >= 4 &&
+                            (qt.contains(bt) || bt.contains(qt)) -> score += 2  // substring
+                        // first-3-char prefix match (handles plural/tense)
+                        qt.length >= 4 && bt.length >= 4 &&
+                            qt.take(3) == bt.take(3) -> score += 1
+                    }
+                }
             }
             if (score > 0) Hit(bundle, score) else null
         }
 
-        return scored.sortedByDescending { it.score }.take(topK)
+        val result = scored.sortedByDescending { it.score }.take(topK)
+        android.util.Log.i("SmgRetriever",
+            "Hits: ${result.map { "${it.bundle.id}(${it.score})" }}")
+        return result
+    }
+
+    /**
+     * Compact list of ALL slips in this conversation. Always injected into
+     * system prompt so the model can see what's available even if no
+     * auto-retrieval hit happened.
+     */
+    suspend fun listAllSlipsCompact(convId: String): String {
+        val bundles = kc.listBundles(convId)
+        if (bundles.isEmpty()) return ""
+        val sb = StringBuilder()
+        sb.append("[Slips available: ").append(bundles.size).append("]\n")
+        bundles.takeLast(30).forEach { b ->
+            val clean = cleanKeywords(b.keywords).joinToString(", ")
+            if (clean.isNotBlank()) {
+                sb.append(b.id).append(": ").append(clean).append("\n")
+            }
+        }
+        return sb.toString().trimEnd()
     }
 }

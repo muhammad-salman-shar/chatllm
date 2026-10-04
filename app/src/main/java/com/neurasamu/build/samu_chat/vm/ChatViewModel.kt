@@ -205,7 +205,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val memIndex = promptBuilder.buildMemoryIndex(conv.id)
                 if (memIndex.isNotBlank()) sysParts.add(memIndex)
 
-                val hits = retriever.retrieve(conv.id, text, api, topK = 2)
+                val hits = retriever.retrieve(conv.id, text, api, topK = 3)
                 if (hits.isNotEmpty()) {
                     val recalled = promptBuilder.buildRecalledContext(hits)
                     if (recalled.isNotBlank()) sysParts.add(recalled)
