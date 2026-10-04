@@ -38,6 +38,7 @@ data class ChatUiState(
     val smgStatus: String = "",
     val bundles: List<SmgBundle> = emptyList()
 
+)
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ChatRepository(app)
