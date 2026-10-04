@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,14 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neurasamu.build.samu_chat.data.ApiConfig
-import com.neurasamu.build.samu_chat.smg.SmgBundle
+import com.neurasamu.build.samu_chat.data.Message
 import com.neurasamu.build.samu_chat.vm.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -36,7 +32,6 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     var showApiEditor by remember { mutableStateOf<ApiConfig?>(null) }
     var showNewApi by remember { mutableStateOf(false) }
-    var showMemory by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -89,28 +84,6 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                 )
 
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                NavigationDrawerItem(
-                    label = { Text("Memory (SMG)") },
-                    icon = { Icon(Icons.Default.Storage, null) },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        showMemory = true
-                    },
-                    badge = {
-                        if (state.bundleCount > 0) {
-                            Text(
-                                state.bundleCount.toString(),
-                                modifier = Modifier.padding(end = 12.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                )
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
                 Text("Chats", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
@@ -154,32 +127,6 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                         }
                     },
                     actions = {
-                        // SMG toggle
-                        val smgColor = if (state.smgEnabled)
-                            MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                        Surface(
-                            color = smgColor.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(50),
-                            modifier = Modifier.padding(end = 4.dp).clickable { vm.toggleSmg() }
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("SMG",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = smgColor,
-                                    fontWeight = FontWeight.Bold)
-                                if (state.smgEnabled && state.bundleCount > 0) {
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(state.bundleCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = smgColor)
-                                }
-                            }
-                        }
-
                         if (state.activeConversation != null) {
                             val pct = if (state.maxTokens > 0)
                                 state.usedTokens * 100 / state.maxTokens else 0
@@ -218,7 +165,7 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                 }
             }
         ) { pad ->
-            Box(Modifier.fillMaxSize().padding(pad)) {
+            Box(Modifier.fillMaxSize().padding(pad).imePadding()) {
                 if (state.activeApi == null) {
                     EmptyApiState(onAddApi = { showNewApi = true })
                 } else if (state.activeConversation == null) {
@@ -243,17 +190,6 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
             onSave = { vm.saveApi(it); showApiEditor = null },
             onDelete = { vm.deleteApi(it); showApiEditor = null },
             onDismiss = { showApiEditor = null }
-        )
-    }
-    if (showMemory) {
-        MemoryDialog(
-            bundles = state.bundles,
-            smgEnabled = state.smgEnabled,
-            status = state.smgStatus,
-            onDelete = vm::deleteBundle,
-            onClearAll = vm::clearAllBundles,
-            onToggle = vm::toggleSmg,
-            onDismiss = { showMemory = false }
         )
     }
     if (state.showContextWarning) {
@@ -297,7 +233,17 @@ private fun ChatScreen(vm: ChatViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
-    var editingMessage by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Message?>(null) }
+    var editingMessage by remember { mutableStateOf<Message?>(null) }
+    var pendingAttachment by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingAttachmentName by remember { mutableStateOf<String?>(null) }
+    val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            pendingAttachment = it
+            pendingAttachmentName = it.lastPathSegment
+        }
+    }
     val clipboard = LocalContext.current.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
         as android.content.ClipboardManager
 
@@ -341,15 +287,6 @@ private fun ChatScreen(vm: ChatViewModel) {
             }
         }
 
-        if (state.smgEnabled && state.smgStatus.isNotBlank()) {
-            Text(
-                "SMG: ${state.smgStatus}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
-            )
-        }
-
         state.error?.let { err ->
             Surface(
                 Modifier.fillMaxWidth().padding(8.dp),
@@ -366,39 +303,70 @@ private fun ChatScreen(vm: ChatViewModel) {
         }
 
         Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
-            Row(
-                Modifier.fillMaxWidth().padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    placeholder = { Text("Message…") },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 5
-                )
-                Spacer(Modifier.width(8.dp))
-                if (state.isStreaming) {
-                    FilledIconButton(
-                        onClick = { vm.cancelStream() },
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = Color(0xFFEF4444)
-                        )
+            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                pendingAttachment?.let { uri ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
                     ) {
-                        Icon(Icons.Default.Stop, "stop")
+                        Row(
+                            Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AttachFile, null, Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                pendingAttachmentName ?: uri.toString(),
+                                Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1
+                            )
+                            IconButton(onClick = {
+                                pendingAttachment = null
+                                pendingAttachmentName = null
+                            }) { Icon(Icons.Default.Close, null, Modifier.size(16.dp)) }
+                        }
                     }
-                } else {
-                    FilledIconButton(
-                        onClick = {
-                            val t = input.trim()
-                            if (t.isNotEmpty()) {
-                                vm.sendMessage(t)
-                                input = ""
-                            }
-                        },
-                        enabled = input.isNotBlank()
-                    ) {
-                        Icon(Icons.Default.Send, "send")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
+                        Icon(Icons.Default.AttachFile, "attach",
+                            tint = MaterialTheme.colorScheme.primary)
+                    }
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        placeholder = { Text("Message…") },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 5
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (state.isStreaming) {
+                        FilledIconButton(
+                            onClick = { vm.cancelStream() },
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color(0xFFEF4444)
+                            )
+                        ) { Icon(Icons.Default.Stop, "stop") }
+                    } else {
+                        FilledIconButton(
+                            onClick = {
+                                val t = input.trim()
+                                if (t.isNotEmpty() || pendingAttachment != null) {
+                                    val msg = if (pendingAttachment != null)
+                                        t + "\n\n[attachment: " + (pendingAttachmentName ?: "file") + "]"
+                                    else t
+                                    val fallback = "[attachment: " + (pendingAttachmentName ?: "file") + "]"
+                                    vm.sendMessage(if (msg.isBlank()) fallback else msg)
+                                    input = ""
+                                    pendingAttachment = null
+                                    pendingAttachmentName = null
+                                }
+                            },
+                            enabled = input.isNotBlank() || pendingAttachment != null
+                        ) { Icon(Icons.Default.Send, "send") }
                     }
                 }
             }
@@ -474,15 +442,13 @@ private fun ThinkingBubble() {
 private fun MessageBubble(
     role: String,
     content: String,
-    dimmed: Boolean = false,
     onCopy: (() -> Unit)?,
     onEdit: (() -> Unit)?
 ) {
     val isUser = role == "user"
     val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val baseBg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                 else MaterialTheme.colorScheme.surface
-    val bg = if (dimmed) baseBg.copy(alpha = 0.35f) else baseBg
+    val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+             else MaterialTheme.colorScheme.surface
     var menuOpen by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxWidth(), contentAlignment = align) {
@@ -503,17 +469,8 @@ private fun MessageBubble(
                         }
                     )
             ) {
-                Column(Modifier.padding(10.dp)) {
-                    if (dimmed) {
-                        Text(
-                            "evicted · sent to memory",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                        )
-                        Spacer(Modifier.height(2.dp))
-                    }
-                    Text(content, style = MaterialTheme.typography.bodyMedium)
-                }
+                Text(content, Modifier.padding(10.dp),
+                    style = MaterialTheme.typography.bodyMedium)
             }
             DropdownMenu(
                 expanded = menuOpen,
@@ -536,83 +493,4 @@ private fun MessageBubble(
             }
         }
     }
-}
-
-@Composable
-private fun MemoryDialog(
-    bundles: List<SmgBundle>,
-    smgEnabled: Boolean,
-    status: String,
-    onDelete: (String) -> Unit,
-    onClearAll: () -> Unit,
-    onToggle: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("SMG Memory") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 500.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (smgEnabled) "SMG is ON" else "SMG is OFF",
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (smgEnabled) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onToggle) {
-                        Text(if (smgEnabled) "Turn off" else "Turn on")
-                    }
-                }
-                if (status.isNotBlank()) {
-                    Text("Status: $status",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                }
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-                if (bundles.isEmpty()) {
-                    Text("No slips yet. Start chatting with SMG on to build memory.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                } else {
-                    Text("${bundles.size} slip(s)",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(6.dp))
-                    bundles.forEach { b ->
-                        Card(
-                            Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(b.id, fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyMedium)
-                                    Text(b.keywords,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        maxLines = 3)
-                                    Text("access: ${b.accessCount}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                                }
-                                IconButton(onClick = { onDelete(b.id) }) {
-                                    Icon(Icons.Default.Delete, "del", Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = onClearAll) {
-                        Text("Clear all memory",
-                            color = Color(0xFFEF4444))
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
-    )
 }

@@ -10,11 +10,6 @@ import com.neurasamu.build.samu_chat.data.Message
 import com.neurasamu.build.samu_chat.network.ChatClient
 import com.neurasamu.build.samu_chat.network.ChatEvent
 import com.neurasamu.build.samu_chat.network.ChatRequest
-import com.neurasamu.build.samu_chat.smg.KcController
-import com.neurasamu.build.samu_chat.smg.KeywordExtractor
-import com.neurasamu.build.samu_chat.smg.SmgBundle
-import com.neurasamu.build.samu_chat.smg.SmgPromptBuilder
-import com.neurasamu.build.samu_chat.smg.SmgRetriever
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,29 +27,18 @@ data class ChatUiState(
     val error: String? = null,
     val usedTokens: Int = 0,
     val maxTokens: Int = 4096,
-    val showContextWarning: Boolean = false,
-    val smgEnabled: Boolean = false,
-    val bundleCount: Int = 0,
-    val smgStatus: String = "",
-    val bundles: List<SmgBundle> = emptyList(),
-    val evictedIds: Set<String> = emptySet(),
-    val l1TurnCount: Int = 4
-
+    val showContextWarning: Boolean = false
 )
+
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ChatRepository(app)
-    private val kc = KcController(app)
-    private val retriever = SmgRetriever(app)
-    private val promptBuilder = SmgPromptBuilder(app)
-
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     private var streamJob: Job? = null
     private var convListJob: Job? = null
     private var msgListJob: Job? = null
-    private var bundleListJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -118,8 +102,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             messages = emptyList(),
             streamingText = "",
             isStreaming = false,
-            error = null,
-            bundleCount = 0
+            error = null
         )
         msgListJob?.cancel()
         msgListJob = viewModelScope.launch {
@@ -127,29 +110,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val api = _state.value.activeApi
                 val maxCtx = api?.contextWindow ?: 4096
                 val sysPrompt = api?.systemPrompt ?: ""
-                val smgOn = _state.value.smgEnabled
-                // Compute evicted messages: when SMG is on, only last 4 turns stay in L1.
-                val evicted = if (smgOn) computeEvicted(msgs) else emptySet()
-                val activeMsgs = msgs.filter { it.id !in evicted }
                 val allText = (if (sysPrompt.isNotBlank()) listOf(sysPrompt) else emptyList()) +
-                    activeMsgs.map { it.content }
+                    msgs.map { it.content }
                 val used = TokenEstimator.estimateAll(allText)
                 val warning = used >= (maxCtx * 0.9).toInt()
                 _state.value = _state.value.copy(
                     messages = msgs,
-                    evictedIds = evicted,
                     usedTokens = used,
                     maxTokens = maxCtx,
                     showContextWarning = warning
-                )
-            }
-        }
-        bundleListJob?.cancel()
-        bundleListJob = viewModelScope.launch {
-            kc.observeBundles(conv.id).collect { list ->
-                _state.value = _state.value.copy(
-                    bundleCount = list.size,
-                    bundles = list
                 )
             }
         }
@@ -160,24 +129,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             repo.deleteConversation(conv.id)
             if (_state.value.activeConversation?.id == conv.id) {
                 msgListJob?.cancel()
-                bundleListJob?.cancel()
                 _state.value = _state.value.copy(
                     activeConversation = null,
-                    messages = emptyList(),
-                    bundleCount = 0
+                    messages = emptyList()
                 )
             }
         }
-    }
-
-    /**
-     * Messages outside the last 4 turns (8 messages) get evicted when SMG is ON.
-     * These stay in DB and UI, but are not sent to the model in context.
-     */
-    private fun computeEvicted(msgs: List<Message>): Set<String> {
-        val l1Turns = _state.value.l1TurnCount
-        if (msgs.size <= l1Turns * 2) return emptySet()
-        return msgs.dropLast(l1Turns * 2).map { it.id }.toSet()
     }
 
     fun sendMessage(text: String) {
@@ -212,49 +169,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
-        // Build system prompt parts
-        val sysParts = mutableListOf<String>()
-        api.systemPrompt.trim().takeIf { it.isNotBlank() }?.let { sysParts.add(it) }
+        val sys = api.systemPrompt.trim()
+        val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
+        val context = base + msgs.map { it.role to it.content }
 
-        val smgOn = _state.value.smgEnabled
-        if (smgOn) {
-            try {
-                _state.value = _state.value.copy(smgStatus = "Scanning memory…")
-                val memIndex = promptBuilder.buildMemoryIndex(conv.id)
-                if (memIndex.isNotBlank()) sysParts.add(memIndex)
-
-                val hits = retriever.retrieve(conv.id, text, api, topK = 3)
-                if (hits.isNotEmpty()) {
-                    val recalled = promptBuilder.buildRecalledContext(hits)
-                    if (recalled.isNotBlank()) sysParts.add(recalled)
-                    _state.value = _state.value.copy(
-                        smgStatus = "Recalled ${hits.size} slip(s)"
-                    )
-                } else {
-                    _state.value = _state.value.copy(smgStatus = "Memory empty")
-                }
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(smgStatus = "SMG error: ${e.message}")
-            }
-        }
-
-        val base = if (sysParts.isNotEmpty())
-            listOf("system" to sysParts.joinToString("\n\n"))
-        else emptyList()
-        // Context: with SMG on, only last 4 turns (L1 window) go in.
-        // Evicted turns stay in DB/UI but do NOT reach the model.
-        val l1Turns = _state.value.l1TurnCount
-        val historyMsgs = if (smgOn) msgs.takeLast(l1Turns * 2) else msgs
-        val context = base + historyMsgs.map { it.role to it.content }
-
-        runStream(api, conv, context, text)
+        runStream(api, conv, context)
     }
 
     private fun runStream(
         api: ApiConfig,
         conv: Conversation,
-        context: List<Pair<String, String>>,
-        userText: String
+        context: List<Pair<String, String>>
     ) {
         streamJob?.cancel()
         _state.value = _state.value.copy(isStreaming = true, streamingText = "", error = null)
@@ -279,18 +204,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     is ChatEvent.Done -> {
                         val content = ev.fullText.ifBlank { full }
                         if (content.isNotBlank()) {
-                            val assistantMsg = Message(
-                                conversationId = conv.id,
-                                role = "assistant",
-                                content = content
+                            repo.insertMessage(
+                                Message(
+                                    conversationId = conv.id,
+                                    role = "assistant",
+                                    content = content
+                                )
                             )
-                            repo.insertMessage(assistantMsg)
-
-                            if (_state.value.smgEnabled) {
-                                viewModelScope.launch {
-                                    createBundleAsync(api, conv, userText, content)
-                                }
-                            }
                         }
                         _state.value = _state.value.copy(
                             isStreaming = false,
@@ -309,77 +229,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun createBundleAsync(
-        api: ApiConfig,
-        conv: Conversation,
-        userText: String,
-        assistantText: String
-    ) {
-        try {
-            _state.value = _state.value.copy(smgStatus = "Indexing turn…")
-
-            // Extract keywords (LLM preferred, fallback to heuristic)
-            val keywords = try {
-                val llmKw = KeywordExtractor.extract(
-                    userText = userText,
-                    assistantText = assistantText,
-                    baseUrl = api.baseUrl,
-                    apiKey = api.apiKey,
-                    model = api.modelName
-                )
-                if (llmKw.isBlank())
-                    KeywordExtractor.extractHeuristic("$userText $assistantText")
-                else llmKw
-            } catch (_: Exception) {
-                KeywordExtractor.extractHeuristic("$userText $assistantText")
-            }
-
-            if (keywords.isBlank()) {
-                _state.value = _state.value.copy(smgStatus = "No keywords")
-                return
-            }
-
-            // Find the most recent user + assistant message IDs from DB
-            val all = repo.listMessages(conv.id)
-            val lastUser = all.lastOrNull { it.role == "user" && it.content == userText }
-            val lastAssistant = all.lastOrNull { it.role == "assistant" && it.content == assistantText }
-            if (lastUser == null || lastAssistant == null) {
-                _state.value = _state.value.copy(smgStatus = "Bundle skip — messages not found")
-                return
-            }
-
-            val bundle = kc.createBundle(
-                convId = conv.id,
-                userMessageId = lastUser.id,
-                assistantMessageId = lastAssistant.id,
-                keywords = keywords
-            )
-            _state.value = _state.value.copy(
-                smgStatus = if (bundle != null) "${bundle.id} created" else "Bundle failed"
-            )
-        } catch (e: Exception) {
-            _state.value = _state.value.copy(smgStatus = "Bundle error: ${e.message}")
-        }
-    }
-
-    fun toggleSmg() {
-        val next = !_state.value.smgEnabled
-        _state.value = _state.value.copy(
-            smgEnabled = next,
-            smgStatus = if (next) "SMG ON" else "SMG OFF"
-        )
-    }
-
-    fun cancelStream() {
-        streamJob?.cancel()
-        _state.value = _state.value.copy(isStreaming = false, streamingText = "")
-    }
-
-    fun deleteMessage(id: String) {
-        viewModelScope.launch { repo.deleteMessage(id) }
-    }
-
-
     fun editAndResend(oldMsg: Message, newText: String) {
         val conv = _state.value.activeConversation ?: return
         val api = _state.value.activeApi ?: return
@@ -394,17 +243,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val sys = api.systemPrompt.trim()
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + updated.map { it.role to it.content }
-            runStream(api, conv, context, newText)
+            runStream(api, conv, context)
         }
     }
 
-    fun deleteBundle(id: String) {
-        viewModelScope.launch { kc.deleteBundle(id) }
+    fun cancelStream() {
+        streamJob?.cancel()
+        _state.value = _state.value.copy(isStreaming = false, streamingText = "")
     }
 
-    fun clearAllBundles() {
-        val conv = _state.value.activeConversation ?: return
-        viewModelScope.launch { kc.deleteForConversation(conv.id) }
+    fun deleteMessage(id: String) {
+        viewModelScope.launch { repo.deleteMessage(id) }
     }
 
     fun dismissContextWarning() {
