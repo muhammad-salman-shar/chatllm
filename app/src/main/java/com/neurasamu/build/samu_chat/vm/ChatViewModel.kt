@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 data class ChatUiState(
     val apis: List<ApiConfig> = emptyList(),
@@ -35,21 +34,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     private var streamJob: Job? = null
+    private var convListJob: Job? = null
+    private var msgListJob: Job? = null
 
     init {
         viewModelScope.launch {
             repo.observeApis().collect { apis ->
                 _state.value = _state.value.copy(apis = apis)
-                if (_state.value.activeApi == null && apis.isNotEmpty()) {
+                val active = _state.value.activeApi
+                if (active == null && apis.isNotEmpty()) {
                     selectApi(apis.first())
+                } else if (active != null && apis.none { it.id == active.id }) {
+                    // active api removed
+                    if (apis.isNotEmpty()) selectApi(apis.first())
+                    else _state.value = _state.value.copy(activeApi = null)
                 }
             }
         }
     }
 
     fun selectApi(api: ApiConfig) {
-        _state.value = _state.value.copy(activeApi = api)
-        viewModelScope.launch {
+        _state.value = _state.value.copy(
+            activeApi = api,
+            activeConversation = null,
+            messages = emptyList()
+        )
+        convListJob?.cancel()
+        convListJob = viewModelScope.launch {
             repo.observeConversationsFor(api.id).collect { convs ->
                 _state.value = _state.value.copy(conversations = convs)
             }
@@ -64,23 +75,35 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.deleteApi(api)
             if (_state.value.activeApi?.id == api.id) {
-                _state.value = _state.value.copy(activeApi = null, activeConversation = null, messages = emptyList())
+                _state.value = _state.value.copy(
+                    activeApi = null,
+                    activeConversation = null,
+                    messages = emptyList(),
+                    conversations = emptyList()
+                )
             }
         }
     }
 
     fun newConversation() {
         val api = _state.value.activeApi ?: return
-        val conv = Conversation(apiConfigId = api.id, title = "New chat")
         viewModelScope.launch {
+            val conv = Conversation(apiConfigId = api.id, title = "New chat")
             repo.saveConversation(conv)
             openConversation(conv)
         }
     }
 
     fun openConversation(conv: Conversation) {
-        _state.value = _state.value.copy(activeConversation = conv, messages = emptyList())
-        viewModelScope.launch {
+        _state.value = _state.value.copy(
+            activeConversation = conv,
+            messages = emptyList(),
+            streamingText = "",
+            isStreaming = false,
+            error = null
+        )
+        msgListJob?.cancel()
+        msgListJob = viewModelScope.launch {
             repo.observeMessages(conv.id).collect { msgs ->
                 _state.value = _state.value.copy(messages = msgs)
             }
@@ -91,33 +114,51 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.deleteConversation(conv.id)
             if (_state.value.activeConversation?.id == conv.id) {
-                _state.value = _state.value.copy(activeConversation = null, messages = emptyList())
+                msgListJob?.cancel()
+                _state.value = _state.value.copy(
+                    activeConversation = null,
+                    messages = emptyList()
+                )
             }
         }
     }
 
     fun sendMessage(text: String) {
-        val api = _state.value.activeApi ?: return
-        val conv = _state.value.activeConversation ?: run {
-            newConversation()
-            return
-        }
         if (text.isBlank()) return
+        val api = _state.value.activeApi ?: return
 
-        viewModelScope.launch {
-            val userMsg = Message(conversationId = conv.id, role = "user", content = text)
-            repo.insertMessage(userMsg)
-
-            // Auto-title on first user message
-            val msgs = repo.listMessages(conv.id)
-            if (msgs.count { it.role == "user" } == 1) {
-                val title = text.take(40).replace("\n", " ")
-                repo.renameConversation(conv.id, title)
+        val conv = _state.value.activeConversation
+        if (conv == null) {
+            viewModelScope.launch {
+                val newConv = Conversation(apiConfigId = api.id, title = "New chat")
+                repo.saveConversation(newConv)
+                openConversation(newConv)
+                performSend(api, newConv, text)
             }
-
-            val context = msgs.map { it.role to it.content } + listOf("user" to text)
-            runStream(api, conv, context)
+        } else {
+            viewModelScope.launch {
+                performSend(api, conv, text)
+            }
         }
+    }
+
+    private suspend fun performSend(api: ApiConfig, conv: Conversation, text: String) {
+        val userMsg = Message(conversationId = conv.id, role = "user", content = text)
+        repo.insertMessage(userMsg)
+
+        val msgs = repo.listMessages(conv.id)
+        if (msgs.count { it.role == "user" } == 1) {
+            val title = text.take(40).replace("\n", " ")
+            repo.renameConversation(conv.id, title)
+            _state.value = _state.value.copy(
+                activeConversation = conv.copy(title = title)
+            )
+        }
+
+        val sys = api.systemPrompt.trim()
+        val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
+        val context = base + msgs.map { it.role to it.content } + listOf("user" to text)
+        runStream(api, conv, context)
     }
 
     private fun runStream(api: ApiConfig, conv: Conversation, context: List<Pair<String, String>>) {
@@ -149,7 +190,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         _state.value = _state.value.copy(isStreaming = false, streamingText = "")
                     }
                     is ChatEvent.Error -> {
-                        _state.value = _state.value.copy(isStreaming = false, streamingText = "", error = ev.message)
+                        _state.value = _state.value.copy(
+                            isStreaming = false,
+                            streamingText = "",
+                            error = ev.message
+                        )
                     }
                 }
             }

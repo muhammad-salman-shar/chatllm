@@ -204,10 +204,10 @@ private fun ChatScreen(vm: ChatViewModel) {
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
 
-    LaunchedEffect(state.messages.size, state.streamingText) {
-        if (state.messages.isNotEmpty() || state.streamingText.isNotEmpty()) {
-            val target = state.messages.size + if (state.streamingText.isNotEmpty()) 1 else 0
-            if (target > 0) listState.animateScrollToItem(target - 1)
+    LaunchedEffect(state.messages.size, state.streamingText.isNotEmpty()) {
+        val total = state.messages.size + if (state.streamingText.isNotEmpty()) 1 else 0
+        if (total > 0) {
+            try { listState.scrollToItem(total - 1) } catch (_: Exception) {}
         }
     }
 
