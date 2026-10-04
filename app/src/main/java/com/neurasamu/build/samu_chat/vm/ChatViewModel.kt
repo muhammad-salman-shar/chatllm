@@ -12,6 +12,7 @@ import com.neurasamu.build.samu_chat.network.ChatEvent
 import com.neurasamu.build.samu_chat.network.ChatRequest
 import com.neurasamu.build.samu_chat.smg.KcController
 import com.neurasamu.build.samu_chat.smg.KeywordExtractor
+import com.neurasamu.build.samu_chat.smg.SmgBundle
 import com.neurasamu.build.samu_chat.smg.SmgPromptBuilder
 import com.neurasamu.build.samu_chat.smg.SmgRetriever
 import kotlinx.coroutines.Job
@@ -34,8 +35,8 @@ data class ChatUiState(
     val showContextWarning: Boolean = false,
     val smgEnabled: Boolean = false,
     val bundleCount: Int = 0,
-    val smgStatus: String = ""
-)
+    val smgStatus: String = "",
+    val bundles: List<SmgBundle> = emptyList()
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -137,7 +138,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         bundleListJob?.cancel()
         bundleListJob = viewModelScope.launch {
             kc.observeBundles(conv.id).collect { list ->
-                _state.value = _state.value.copy(bundleCount = list.size)
+                _state.value = _state.value.copy(
+                    bundleCount = list.size,
+                    bundles = list
+                )
             }
         }
     }
@@ -353,6 +357,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteMessage(id: String) {
         viewModelScope.launch { repo.deleteMessage(id) }
+    }
+
+    fun deleteBundle(id: String) {
+        viewModelScope.launch { kc.deleteBundle(id) }
+    }
+
+    fun clearAllBundles() {
+        val conv = _state.value.activeConversation ?: return
+        viewModelScope.launch { kc.deleteForConversation(conv.id) }
     }
 
     fun dismissContextWarning() {
