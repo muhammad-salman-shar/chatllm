@@ -36,7 +36,9 @@ data class ChatUiState(
     val smgEnabled: Boolean = false,
     val bundleCount: Int = 0,
     val smgStatus: String = "",
-    val bundles: List<SmgBundle> = emptyList()
+    val bundles: List<SmgBundle> = emptyList(),
+    val evictedIds: Set<String> = emptySet(),
+    val l1TurnCount: Int = 4
 
 )
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
@@ -125,11 +127,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val api = _state.value.activeApi
                 val maxCtx = api?.contextWindow ?: 4096
                 val sysPrompt = api?.systemPrompt ?: ""
-                val allText = (if (sysPrompt.isNotBlank()) listOf(sysPrompt) else emptyList()) + msgs.map { it.content }
+                val smgOn = _state.value.smgEnabled
+                // Compute evicted messages: when SMG is on, only last 4 turns stay in L1.
+                val evicted = if (smgOn) computeEvicted(msgs) else emptySet()
+                val activeMsgs = msgs.filter { it.id !in evicted }
+                val allText = (if (sysPrompt.isNotBlank()) listOf(sysPrompt) else emptyList()) +
+                    activeMsgs.map { it.content }
                 val used = TokenEstimator.estimateAll(allText)
                 val warning = used >= (maxCtx * 0.9).toInt()
                 _state.value = _state.value.copy(
                     messages = msgs,
+                    evictedIds = evicted,
                     usedTokens = used,
                     maxTokens = maxCtx,
                     showContextWarning = warning
@@ -160,6 +168,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    /**
+     * Messages outside the last 4 turns (8 messages) get evicted when SMG is ON.
+     * These stay in DB and UI, but are not sent to the model in context.
+     */
+    private fun computeEvicted(msgs: List<Message>): Set<String> {
+        val l1Turns = _state.value.l1TurnCount
+        if (msgs.size <= l1Turns * 2) return emptySet()
+        return msgs.dropLast(l1Turns * 2).map { it.id }.toSet()
     }
 
     fun sendMessage(text: String) {
@@ -223,9 +241,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val base = if (sysParts.isNotEmpty())
             listOf("system" to sysParts.joinToString("\n\n"))
         else emptyList()
-
-        // Bounded window when SMG on, full history when off
-        val historyMsgs = if (smgOn) msgs.takeLast(6) else msgs
+        // Context: with SMG on, only last 4 turns (L1 window) go in.
+        // Evicted turns stay in DB/UI but do NOT reach the model.
+        val l1Turns = _state.value.l1TurnCount
+        val historyMsgs = if (smgOn) msgs.takeLast(l1Turns * 2) else msgs
         val context = base + historyMsgs.map { it.role to it.content }
 
         runStream(api, conv, context, text)

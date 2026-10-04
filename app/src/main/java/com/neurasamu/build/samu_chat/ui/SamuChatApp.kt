@@ -474,13 +474,15 @@ private fun ThinkingBubble() {
 private fun MessageBubble(
     role: String,
     content: String,
+    dimmed: Boolean = false,
     onCopy: (() -> Unit)?,
     onEdit: (() -> Unit)?
 ) {
     val isUser = role == "user"
     val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-             else MaterialTheme.colorScheme.surface
+    val baseBg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                 else MaterialTheme.colorScheme.surface
+    val bg = if (dimmed) baseBg.copy(alpha = 0.35f) else baseBg
     var menuOpen by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxWidth(), contentAlignment = align) {
@@ -501,8 +503,17 @@ private fun MessageBubble(
                         }
                     )
             ) {
-                Text(content, Modifier.padding(10.dp),
-                    style = MaterialTheme.typography.bodyMedium)
+                Column(Modifier.padding(10.dp)) {
+                    if (dimmed) {
+                        Text(
+                            "evicted · sent to memory",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        )
+                        Spacer(Modifier.height(2.dp))
+                    }
+                    Text(content, style = MaterialTheme.typography.bodyMedium)
+                }
             }
             DropdownMenu(
                 expanded = menuOpen,
@@ -526,6 +537,7 @@ private fun MessageBubble(
         }
     }
 }
+
 @Composable
 private fun MemoryDialog(
     bundles: List<SmgBundle>,
