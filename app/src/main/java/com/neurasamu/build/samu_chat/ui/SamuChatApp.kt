@@ -125,6 +125,24 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                     },
                     actions = {
                         if (state.activeConversation != null) {
+                            val pct = if (state.maxTokens > 0) state.usedTokens * 100 / state.maxTokens else 0
+                            val chipColor = when {
+                                pct >= 90 -> Color(0xFFEF4444)
+                                pct >= 70 -> Color(0xFFF59E0B)
+                                else -> MaterialTheme.colorScheme.primary
+                            }
+                            Surface(
+                                color = chipColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier.padding(end = 4.dp)
+                            ) {
+                                Text(
+                                    "${state.usedTokens}/${state.maxTokens}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = chipColor,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                             IconButton(onClick = { vm.newConversation() }) {
                                 Icon(Icons.Default.Add, "new")
                             }
@@ -172,8 +190,26 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
             onDismiss = { showApiEditor = null }
         )
     }
+    if (state.showContextWarning) {
+        AlertDialog(
+            onDismissRequest = { /* stays until dismissed */ },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Chat full") },
+            text = {
+                Text("This conversation has used ~${state.usedTokens} of ${state.maxTokens} tokens. " +
+                     "Replies may get cut off. Start a new chat to keep things fast and clean.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.newConversation()
+                }) { Text("New chat") }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.dismissContextWarning() }) { Text("Continue") }
+            }
+        )
+    }
 }
-
 @Composable
 private fun EmptyApiState(onAddApi: () -> Unit) {
     Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {

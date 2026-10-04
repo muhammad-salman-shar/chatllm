@@ -24,9 +24,11 @@ data class ChatUiState(
     val messages: List<Message> = emptyList(),
     val streamingText: String = "",
     val isStreaming: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val usedTokens: Int = 0,
+    val maxTokens: Int = 4096,
+    val showContextWarning: Boolean = false
 )
-
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ChatRepository(app)
@@ -105,7 +107,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         msgListJob?.cancel()
         msgListJob = viewModelScope.launch {
             repo.observeMessages(conv.id).collect { msgs ->
-                _state.value = _state.value.copy(messages = msgs)
+                val api = _state.value.activeApi
+                val maxCtx = api?.contextWindow ?: 4096
+                val sysPrompt = api?.systemPrompt ?: ""
+                val allText = (if (sysPrompt.isNotBlank()) listOf(sysPrompt) else emptyList()) + msgs.map { it.content }
+                val used = TokenEstimator.estimateAll(allText)
+                val warning = used >= (maxCtx * 0.9).toInt()
+                _state.value = _state.value.copy(
+                    messages = msgs,
+                    usedTokens = used,
+                    maxTokens = maxCtx,
+                    showContextWarning = warning
+                )
             }
         }
     }
@@ -171,6 +184,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 apiKey = api.apiKey,
                 model = api.modelName,
                 messages = context,
+                temperature = api.temperature.toDouble(),
+                maxTokens = api.maxTokensPerReply,
                 stream = true
             )
             var full = ""
@@ -208,6 +223,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteMessage(id: String) {
         viewModelScope.launch { repo.deleteMessage(id) }
+    }
+
+    fun dismissContextWarning() {
+        _state.value = _state.value.copy(showContextWarning = false)
     }
 
     fun clearError() {

@@ -14,6 +14,12 @@ data class ApiConfig(
     val modelName: String,
     @ColumnInfo(defaultValue = "")
     val systemPrompt: String = "",
+    @ColumnInfo(defaultValue = "4096")
+    val contextWindow: Int = 4096,
+    @ColumnInfo(defaultValue = "1024")
+    val maxTokensPerReply: Int = 1024,
+    @ColumnInfo(defaultValue = "0.7")
+    val temperature: Float = 0.7f,
     val createdAt: Long = System.currentTimeMillis()
 )
 
