@@ -283,7 +283,7 @@ private fun ChatScreen(vm: ChatViewModel) {
 @Composable
 private fun MessageBubble(role: String, content: String) {
     val isUser = role == "user"
-    val align = if (isUser) Alignment.End else Alignment.Start
+    val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
              else MaterialTheme.colorScheme.surface
     Box(Modifier.fillMaxWidth(), contentAlignment = align) {
