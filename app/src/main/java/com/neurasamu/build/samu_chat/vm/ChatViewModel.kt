@@ -170,7 +170,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
         val sys = api.systemPrompt.trim()
         val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
-        val context = base + msgs.map { it.role to it.content } + listOf("user" to text)
+        val context = base + msgs.map { it.role to it.content }
         runStream(api, conv, context)
     }
 
