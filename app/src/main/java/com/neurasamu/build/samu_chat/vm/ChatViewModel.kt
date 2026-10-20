@@ -195,11 +195,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 stream = true
             )
             var full = ""
+            var lastUiUpdate = 0L
             ChatClient.stream(req).collect { ev ->
                 when (ev) {
                     is ChatEvent.Token -> {
                         full += ev.text
-                        _state.value = _state.value.copy(streamingText = full)
+                        val now = System.currentTimeMillis()
+                        if (now - lastUiUpdate >= 80L) {
+                            lastUiUpdate = now
+                            _state.value = _state.value.copy(streamingText = full)
+                        }
                     }
                     is ChatEvent.Done -> {
                         val content = ev.fullText.ifBlank { full }
