@@ -124,6 +124,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun renameConversation(conv: Conversation, newTitle: String) {
+        if (newTitle.isBlank()) return
+        viewModelScope.launch {
+            repo.renameConversation(conv.id, newTitle.trim())
+            if (_state.value.activeConversation?.id == conv.id) {
+                _state.value = _state.value.copy(
+                    activeConversation = conv.copy(title = newTitle.trim())
+                )
+            }
+        }
+    }
+
+    suspend fun exportConversationText(conv: Conversation): String {
+        val api = _state.value.activeApi
+        val msgs = repo.listMessages(conv.id)
+        val sb = StringBuilder()
+        sb.appendLine("# " + conv.title)
+        sb.appendLine("Model: " + (api?.modelName ?: "Unknown"))
+        sb.appendLine()
+        msgs.forEach { m ->
+            sb.appendLine("**" + m.role.replaceFirstChar { it.uppercase() } + "**:")
+            sb.appendLine(m.content)
+            sb.appendLine()
+        }
+        return sb.toString()
+    }
+
+
     fun deleteConversation(conv: Conversation) {
         viewModelScope.launch {
             repo.deleteConversation(conv.id)

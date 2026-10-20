@@ -33,6 +33,25 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     var showApiEditor by remember { mutableStateOf<ApiConfig?>(null) }
     var showNewApi by remember { mutableStateOf(false) }
+    var convMenuOpen by remember { mutableStateOf<String?>(null) }
+    var renameConv by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Conversation?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var pendingExport by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Conversation?>(null) }
+    val ctxApp = LocalContext.current
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        val c = pendingExport
+        if (uri != null && c != null) {
+            scope.launch {
+                val text = vm.exportConversationText(c)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    ctxApp.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+                }
+            }
+        }
+        pendingExport = null
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -97,8 +116,41 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                             scope.launch { drawerState.close() }
                         },
                         badge = {
-                            IconButton(onClick = { vm.deleteConversation(conv) }) {
-                                Icon(Icons.Default.Delete, "del", Modifier.size(16.dp))
+                            Box {
+                                IconButton(onClick = { convMenuOpen = conv.id }) {
+                                    Icon(Icons.Default.MoreVert, "menu", Modifier.size(18.dp))
+                                }
+                                DropdownMenu(
+                                    expanded = convMenuOpen == conv.id,
+                                    onDismissRequest = { convMenuOpen = null }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Rename") },
+                                        leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                        onClick = {
+                                            renameConv = conv
+                                            renameText = conv.title
+                                            convMenuOpen = null
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Download (txt)") },
+                                        leadingIcon = { Icon(Icons.Default.Download, null) },
+                                        onClick = {
+                                            pendingExport = conv
+                                            exportLauncher.launch(conv.title.replace(" ", "_") + ".txt")
+                                            convMenuOpen = null
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Delete", color = Color(0xFFEF4444)) },
+                                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color(0xFFEF4444)) },
+                                        onClick = {
+                                            vm.deleteConversation(conv)
+                                            convMenuOpen = null
+                                        }
+                                    )
+                                }
                             }
                         },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp)
@@ -177,6 +229,34 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
             }
         }
     }
+
+    renameConv?.let { c ->
+        AlertDialog(
+            onDismissRequest = { renameConv = null },
+            title = { Text("Rename chat") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.renameConversation(c, renameText)
+                        renameConv = null
+                    },
+                    enabled = renameText.isNotBlank()
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameConv = null }) { Text("Cancel") }
+            }
+        )
+    }
+
 
     if (showNewApi) {
         ApiEditDialog(
