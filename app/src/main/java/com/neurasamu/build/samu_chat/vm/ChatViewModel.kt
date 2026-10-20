@@ -245,7 +245,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val context = base + updated.map { it.role to it.content }
             runStream(api, conv, context)
         }
+
+    fun regenerateLast() {
+        val conv = _state.value.activeConversation ?: return
+        val api = _state.value.activeApi ?: return
+        viewModelScope.launch {
+            val msgs = repo.listMessages(conv.id)
+            if (msgs.isEmpty()) return@launch
+            // Find last user message
+            val lastUserIdx = msgs.indexOfLast { it.role == "user" }
+            if (lastUserIdx < 0) return@launch
+            // Delete everything after the last user message (i.e., last assistant reply)
+            msgs.drop(lastUserIdx + 1).forEach { repo.deleteMessage(it.id) }
+            val kept = repo.listMessages(conv.id)
+            val sys = api.systemPrompt.trim()
+            val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
+            val context = base + kept.map { it.role to it.content }
+            runStream(api, conv, context)
+        }
     }
+
 
     fun cancelStream() {
         streamJob?.cancel()

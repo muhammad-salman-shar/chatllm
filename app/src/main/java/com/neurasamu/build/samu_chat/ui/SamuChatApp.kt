@@ -286,6 +286,17 @@ private fun ChatScreen(vm: ChatViewModel) {
                     ThinkingBubble()
                 }
             }
+            if (!state.isStreaming && state.messages.isNotEmpty() && state.messages.lastOrNull()?.role == "assistant") {
+                item(key = "regen") {
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { vm.regenerateLast() }) {
+                            Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Regenerate")
+                        }
+                    }
+                }
+            }
         }
 
         state.error?.let { err ->
