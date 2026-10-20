@@ -279,6 +279,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             runStream(api, conv, context)
         }
 
+    }
     fun exportChatText(): String {
         val conv = _state.value.activeConversation ?: return ""
         val api = _state.value.activeApi
