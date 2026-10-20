@@ -246,6 +246,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             runStream(api, conv, context)
         }
 
+    fun exportChatText(): String {
+        val conv = _state.value.activeConversation ?: return ""
+        val api = _state.value.activeApi
+        val msgs = _state.value.messages
+        val sb = StringBuilder()
+        sb.appendLine("# " + conv.title)
+        sb.appendLine("Model: " + (api?.modelName ?: "Unknown"))
+        sb.appendLine()
+        msgs.forEach { m ->
+            sb.appendLine("**" + m.role.replaceFirstChar { it.uppercase() } + "**:")
+            sb.appendLine(m.content)
+            sb.appendLine()
+        }
+        return sb.toString()
+    }
+
     fun regenerateLast() {
         val conv = _state.value.activeConversation ?: return
         val api = _state.value.activeApi ?: return

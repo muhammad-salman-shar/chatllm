@@ -481,10 +481,8 @@ private fun MessageBubble(
                         }
                     )
             ) {
-                androidx.compose.foundation.text.selection.SelectionContainer {
                     Text(content, Modifier.padding(10.dp),
                         style = MaterialTheme.typography.bodyMedium)
-                }
             }
             DropdownMenu(
                 expanded = menuOpen,
