@@ -145,7 +145,6 @@ object ChatClient {
             put("stream", req.stream)
         }.toString()
     }
-    }
 
     private fun parseNonStream(raw: String): String {
         return try {

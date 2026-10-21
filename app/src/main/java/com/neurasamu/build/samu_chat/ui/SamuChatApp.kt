@@ -433,7 +433,6 @@ private fun ChatScreen(vm: ChatViewModel) {
                     }
                 }
                 pendingAttachment?.let { uri ->
-                pendingAttachment?.let { uri ->
                     Surface(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(8.dp),
@@ -638,4 +637,5 @@ private fun MessageBubble(
             }
         }
     }
+}
 }
