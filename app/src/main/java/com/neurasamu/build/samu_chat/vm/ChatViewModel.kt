@@ -165,7 +165,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, imageBase64: String? = null, imageMime: String = "image/jpeg") {
         if (text.isBlank()) return
         val api = _state.value.activeApi ?: return
 
@@ -175,16 +175,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val newConv = Conversation(apiConfigId = api.id, title = "New chat")
                 repo.saveConversation(newConv)
                 openConversation(newConv)
-                performSend(api, newConv, text)
+                performSend(api, newConv, text, imageBase64, imageMime)
             }
         } else {
             viewModelScope.launch {
-                performSend(api, conv, text)
+                performSend(api, conv, text, imageBase64, imageMime)
             }
         }
     }
 
-    private suspend fun performSend(api: ApiConfig, conv: Conversation, text: String) {
+    private suspend fun performSend(api: ApiConfig, conv: Conversation, text: String, imageBase64: String? = null, imageMime: String = "image/jpeg") {
         val userMsg = Message(conversationId = conv.id, role = "user", content = text)
         repo.insertMessage(userMsg)
 
@@ -201,13 +201,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
         val context = base + msgs.map { it.role to it.content }
 
-        runStream(api, conv, context)
+        runStream(api, conv, context, imageBase64, imageMime)
     }
 
     private fun runStream(
         api: ApiConfig,
         conv: Conversation,
-        context: List<Pair<String, String>>
+        context: List<Pair<String, String>>,
+        imageBase64: String? = null,
+        imageMime: String = "image/jpeg"
     ) {
         streamJob?.cancel()
         _state.value = _state.value.copy(isStreaming = true, streamingText = "", error = null)
@@ -218,6 +220,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 apiKey = api.apiKey,
                 model = api.modelName,
                 messages = context,
+                imageBase64 = imageBase64,
+                imageMime = imageMime,
                 temperature = api.temperature.toDouble(),
                 maxTokens = api.maxTokensPerReply,
                 stream = true
@@ -276,7 +280,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val sys = api.systemPrompt.trim()
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + updated.map { it.role to it.content }
-            runStream(api, conv, context)
+            runStream(api, conv, context, imageBase64, imageMime)
         }
 
     }
@@ -311,7 +315,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val sys = api.systemPrompt.trim()
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + kept.map { it.role to it.content }
-            runStream(api, conv, context)
+            runStream(api, conv, context, imageBase64, imageMime)
         }
     }
 

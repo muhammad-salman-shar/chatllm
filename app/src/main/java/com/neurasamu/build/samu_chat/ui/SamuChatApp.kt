@@ -561,8 +561,18 @@ private fun MessageBubble(
                         }
                     )
             ) {
-                    Text(content, Modifier.padding(10.dp),
-                        style = MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.padding(10.dp)) {
+                        Text(content, style = MaterialTheme.typography.bodyMedium)
+                        if (onCopy != null) {
+                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
+                                TextButton(onClick = onCopy, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                    Icon(Icons.Default.ContentCopy, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                    Spacer(Modifier.width(3.dp))
+                                    Text("Copy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                }
+                            }
+                        }
+                    }
             }
             DropdownMenu(
                 expanded = menuOpen,

@@ -18,7 +18,9 @@ data class ChatRequest(
     val baseUrl: String,
     val apiKey: String,
     val model: String,
-    val messages: List<Pair<String, String>>,   // role to content
+    val messages: List<Pair<String, String>>,
+    val imageBase64: String? = null,
+    val imageMime: String = "image/jpeg",
     val temperature: Double = 0.7,
     val topP: Double = 0.9,
     val maxTokens: Int = 1024,
@@ -112,11 +114,27 @@ object ChatClient {
 
     private fun buildJson(req: ChatRequest): String {
         val arr = JSONArray()
-        req.messages.forEach { (role, content) ->
-            arr.put(JSONObject().apply {
-                put("role", role)
-                put("content", content)
-            })
+        val lastUserIdx = req.messages.indexOfLast { it.first == "user" }
+        req.messages.forEachIndexed { idx, (role, content) ->
+            val obj = JSONObject()
+            obj.put("role", role)
+            if (idx == lastUserIdx && !req.imageBase64.isNullOrBlank()) {
+                val contentArr = JSONArray()
+                contentArr.put(JSONObject().apply {
+                    put("type", "text")
+                    put("text", content)
+                })
+                contentArr.put(JSONObject().apply {
+                    put("type", "image_url")
+                    put("image_url", JSONObject().apply {
+                        put("url", "data:" + req.imageMime + ";base64," + req.imageBase64)
+                    })
+                })
+                obj.put("content", contentArr)
+            } else {
+                obj.put("content", content)
+            }
+            arr.put(obj)
         }
         return JSONObject().apply {
             put("model", req.model)
@@ -126,6 +144,7 @@ object ChatClient {
             put("max_tokens", req.maxTokens)
             put("stream", req.stream)
         }.toString()
+    }
     }
 
     private fun parseNonStream(raw: String): String {
