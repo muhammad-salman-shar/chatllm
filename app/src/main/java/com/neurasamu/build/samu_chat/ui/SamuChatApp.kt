@@ -315,6 +315,8 @@ private fun ChatScreen(vm: ChatViewModel) {
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<Message?>(null) }
+    val ctxApp = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pendingAttachment by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingAttachmentName by remember { mutableStateOf<String?>(null) }
     val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -324,6 +326,7 @@ private fun ChatScreen(vm: ChatViewModel) {
             pendingAttachment = it
             pendingAttachmentName = it.lastPathSegment
         }
+    }
     var pendingImage by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingImageB64 by remember { mutableStateOf<String?>(null) }
     var pendingImageMime by remember { mutableStateOf("image/jpeg") }
@@ -637,5 +640,4 @@ private fun MessageBubble(
             }
         }
     }
-}
 }
