@@ -38,5 +38,7 @@ data class Message(
     val conversationId: String,
     val role: String,
     val content: String,
+    val imageBase64: String? = null,
+    val imageMime: String = "image/jpeg",
     val createdAt: Long = System.currentTimeMillis()
 )

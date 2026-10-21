@@ -9,7 +9,7 @@ import com.neurasamu.build.samu_chat.smg.SmgDao
 
 @Database(
     entities = [ApiConfig::class, Conversation::class, Message::class, SmgBundle::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

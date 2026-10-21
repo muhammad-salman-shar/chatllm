@@ -185,7 +185,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun performSend(api: ApiConfig, conv: Conversation, text: String, imageBase64: String? = null, imageMime: String = "image/jpeg") {
-        val userMsg = Message(conversationId = conv.id, role = "user", content = text)
+        val userMsg = Message(conversationId = conv.id, role = "user", content = text, imageBase64 = imageBase64, imageMime = imageMime)
         repo.insertMessage(userMsg)
 
         val msgs = repo.listMessages(conv.id)
@@ -274,13 +274,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val idx = msgs.indexOfFirst { it.id == oldMsg.id }
             if (idx < 0) return@launch
             msgs.drop(idx).forEach { repo.deleteMessage(it.id) }
-            val userMsg = Message(conversationId = conv.id, role = "user", content = newText)
+            val userMsg = Message(conversationId = conv.id, role = "user", content = newText, imageBase64 = oldMsg.imageBase64, imageMime = oldMsg.imageMime)
             repo.insertMessage(userMsg)
             val updated = repo.listMessages(conv.id)
             val sys = api.systemPrompt.trim()
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + updated.map { it.role to it.content }
-            runStream(api, conv, context, imageBase64, imageMime)
+            runStream(api, conv, context, oldMsg.imageBase64, oldMsg.imageMime)
         }
 
     }
@@ -309,13 +309,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             // Find last user message
             val lastUserIdx = msgs.indexOfLast { it.role == "user" }
             if (lastUserIdx < 0) return@launch
+            val lastUserMsg = msgs[lastUserIdx]
             // Delete everything after the last user message (i.e., last assistant reply)
             msgs.drop(lastUserIdx + 1).forEach { repo.deleteMessage(it.id) }
             val kept = repo.listMessages(conv.id)
             val sys = api.systemPrompt.trim()
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + kept.map { it.role to it.content }
-            runStream(api, conv, context, imageBase64, imageMime)
+            runStream(api, conv, context, lastUserMsg.imageBase64, lastUserMsg.imageMime)
         }
     }
 

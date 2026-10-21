@@ -324,6 +324,26 @@ private fun ChatScreen(vm: ChatViewModel) {
             pendingAttachment = it
             pendingAttachmentName = it.lastPathSegment
         }
+    var pendingImage by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingImageB64 by remember { mutableStateOf<String?>(null) }
+    var pendingImageMime by remember { mutableStateOf("image/jpeg") }
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            pendingImage = it
+            pendingImageMime = ctxApp.contentResolver.getType(it) ?: "image/jpeg"
+            scope.launch {
+                pendingImageB64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        ctxApp.contentResolver.openInputStream(it)?.use { ins ->
+                            val bytes = ins.readBytes()
+                            android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        }
+                    } catch (_: Exception) { null }
+                }
+            }
+        }
     }
     val clipboard = LocalContext.current.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
         as android.content.ClipboardManager
@@ -396,6 +416,23 @@ private fun ChatScreen(vm: ChatViewModel) {
 
         Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                pendingImageB64?.let {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                    ) {
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Image, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Image attached", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                            IconButton(onClick = { pendingImage = null; pendingImageB64 = null }) {
+                                Icon(Icons.Default.Close, null, Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+                pendingAttachment?.let { uri ->
                 pendingAttachment?.let { uri ->
                     Surface(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
@@ -427,6 +464,10 @@ private fun ChatScreen(vm: ChatViewModel) {
                         Icon(Icons.Default.AttachFile, "attach",
                             tint = MaterialTheme.colorScheme.primary)
                     }
+                    IconButton(onClick = { imagePicker.launch("image/*") }) {
+                        Icon(Icons.Default.Image, "image",
+                            tint = MaterialTheme.colorScheme.primary)
+                    }
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
@@ -446,18 +487,20 @@ private fun ChatScreen(vm: ChatViewModel) {
                         FilledIconButton(
                             onClick = {
                                 val t = input.trim()
-                                if (t.isNotEmpty() || pendingAttachment != null) {
+                                if (t.isNotEmpty() || pendingAttachment != null || pendingImageB64 != null) {
                                     val msg = if (pendingAttachment != null)
                                         t + "\n\n[attachment: " + (pendingAttachmentName ?: "file") + "]"
                                     else t
                                     val fallback = "[attachment: " + (pendingAttachmentName ?: "file") + "]"
-                                    vm.sendMessage(if (msg.isBlank()) fallback else msg)
+                                    vm.sendMessage(if (msg.isBlank()) fallback else msg, pendingImageB64, pendingImageMime)
                                     input = ""
                                     pendingAttachment = null
                                     pendingAttachmentName = null
+                                    pendingImage = null
+                                    pendingImageB64 = null
                                 }
                             },
-                            enabled = input.isNotBlank() || pendingAttachment != null
+                            enabled = input.isNotBlank() || pendingAttachment != null || pendingImageB64 != null
                         ) { Icon(Icons.Default.Send, "send") }
                     }
                 }
