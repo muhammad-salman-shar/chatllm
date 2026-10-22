@@ -3,6 +3,7 @@ package com.neurasamu.build.samu_chat.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -375,13 +376,13 @@ private fun ChatScreen(vm: ChatViewModel) {
     }
     val clipboard = LocalContext.current.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
         as android.content.ClipboardManager
-    val tts = remember { android.speech.tts.TextToSpeech(LocalContext.current) { } }
+    val tts = remember { android.speech.tts.TextToSpeech(ctxApp) { } }
     val shareText = { text: String ->
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(android.content.Intent.EXTRA_TEXT, text)
         }
-        LocalContext.current.startActivity(android.content.Intent.createChooser(intent, "Share via"))
+        ctxApp.startActivity(android.content.Intent.createChooser(intent, "Share via"))
     }
 
     LaunchedEffect(state.messages.size, state.streamingText.isNotEmpty(), state.isStreaming) {
@@ -626,7 +627,6 @@ private fun ThinkingBubble() {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     @Composable
     private fun MessageBubble(
         role: String,
