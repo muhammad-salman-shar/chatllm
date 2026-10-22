@@ -35,11 +35,16 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SamuChatApp(vm: ChatViewModel = viewModel()) {
+fun SamuChatApp(
+    settings: com.neurasamu.build.samu_chat.data.AppSettings,
+    onSettingsChange: (com.neurasamu.build.samu_chat.data.AppSettings) -> Unit,
+    vm: ChatViewModel = viewModel()
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showApiEditor by remember { mutableStateOf<ApiConfig?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
     var showNewApi by remember { mutableStateOf(false) }
     var convMenuOpen by remember { mutableStateOf<String?>(null) }
     var renameConv by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Conversation?>(null) }
@@ -81,9 +86,9 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                     NavigationDrawerItem(
                         label = {
                             Column {
-                                Text(api.label, fontWeight = FontWeight.SemiBold)
+                                Text(api.label, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                 Text(api.modelName,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 9.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                             }
                         },
@@ -174,10 +179,11 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                     title = {
                         Column {
                             Text(state.activeConversation?.title ?: "SaMu Chat",
-                                fontWeight = FontWeight.Bold)
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp)
                             state.activeApi?.let {
                                 Text("${it.label} · ${it.modelName}",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.primary)
                             }
                         }
@@ -188,6 +194,9 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Default.Settings, "settings", Modifier.size(20.dp))
+                        }
                         if (state.activeConversation != null) {
                             val pct = if (state.maxTokens > 0)
                                 state.usedTokens * 100 / state.maxTokens else 0
@@ -281,6 +290,14 @@ fun SamuChatApp(vm: ChatViewModel = viewModel()) {
             onDismiss = { showApiEditor = null }
         )
     }
+
+    if (showSettings) {
+        SettingsDialog(
+            current = settings,
+            onSave = { onSettingsChange(it); showSettings = false },
+            onDismiss = { showSettings = false }
+        )
+    }
     if (state.showContextWarning) {
         AlertDialog(
             onDismissRequest = { },
@@ -371,7 +388,7 @@ private fun ChatScreen(vm: ChatViewModel) {
         val total = state.messages.size +
             (if (state.streamingText.isNotEmpty() || state.isStreaming) 1 else 0)
         if (total > 0) {
-            try { listState.scrollToItem(total - 1) } catch (_: Exception) {}
+            try { listState.animateScrollToItem(total - 1) } catch (_: Exception) {}
         }
     }
 

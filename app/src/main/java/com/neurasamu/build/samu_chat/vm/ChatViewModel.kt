@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.neurasamu.build.samu_chat.data.ApiConfig
+import com.neurasamu.build.samu_chat.data.AppSettings
 import com.neurasamu.build.samu_chat.data.ChatRepository
 import com.neurasamu.build.samu_chat.data.Conversation
 import com.neurasamu.build.samu_chat.data.Message
@@ -27,7 +28,9 @@ data class ChatUiState(
     val error: String? = null,
     val usedTokens: Int = 0,
     val maxTokens: Int = 4096,
-    val showContextWarning: Boolean = false
+    val showContextWarning: Boolean = false,
+    val customInstructions: String = "",
+    val customInstructionsEnabled: Boolean = true
 )
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
@@ -41,6 +44,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private var msgListJob: Job? = null
 
     init {
+        val appSettings = AppSettings.load(app)
+        _state.value = _state.value.copy(
+            customInstructions = appSettings.customInstructions,
+            customInstructionsEnabled = appSettings.customInstructionsEnabled
+        )
         viewModelScope.launch {
             repo.observeApis().collect { apis ->
                 _state.value = _state.value.copy(apis = apis)
@@ -109,7 +117,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             repo.observeMessages(conv.id).collect { msgs ->
                 val api = _state.value.activeApi
                 val maxCtx = api?.contextWindow ?: 4096
-                val sysPrompt = api?.systemPrompt ?: ""
+                val sysPrompt = api?.let { buildSystemPrompt(it) } ?: ""
                 val allText = (if (sysPrompt.isNotBlank()) listOf(sysPrompt) else emptyList()) +
                     msgs.map { it.content }
                 val used = TokenEstimator.estimateAll(allText)
@@ -197,11 +205,32 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
-        val sys = api.systemPrompt.trim()
+        val sys = buildSystemPrompt(api)
         val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
         val context = base + msgs.map { it.role to it.content }
 
         runStream(api, conv, context, imageBase64, imageMime)
+    }
+
+
+    private fun buildSystemPrompt(api: ApiConfig): String {
+        val parts = mutableListOf<String>()
+        val custom = _state.value.customInstructions.trim()
+        if (_state.value.customInstructionsEnabled && custom.isNotBlank()) {
+            parts.add(custom)
+        }
+        val apiSys = api.systemPrompt.trim()
+        if (apiSys.isNotBlank()) {
+            parts.add(apiSys)
+        }
+        return parts.joinToString("\n\n")
+    }
+
+    fun updateCustomInstructions(text: String, enabled: Boolean) {
+        _state.value = _state.value.copy(
+            customInstructions = text,
+            customInstructionsEnabled = enabled
+        )
     }
 
     private fun runStream(
@@ -277,7 +306,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val userMsg = Message(conversationId = conv.id, role = "user", content = newText, imageBase64 = oldMsg.imageBase64, imageMime = oldMsg.imageMime)
             repo.insertMessage(userMsg)
             val updated = repo.listMessages(conv.id)
-            val sys = api.systemPrompt.trim()
+            val sys = buildSystemPrompt(api)
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + updated.map { it.role to it.content }
             runStream(api, conv, context, oldMsg.imageBase64, oldMsg.imageMime)
@@ -313,7 +342,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             // Delete everything after the last user message (i.e., last assistant reply)
             msgs.drop(lastUserIdx + 1).forEach { repo.deleteMessage(it.id) }
             val kept = repo.listMessages(conv.id)
-            val sys = api.systemPrompt.trim()
+            val sys = buildSystemPrompt(api)
             val base = if (sys.isNotBlank()) listOf("system" to sys) else emptyList()
             val context = base + kept.map { it.role to it.content }
             runStream(api, conv, context, lastUserMsg.imageBase64, lastUserMsg.imageMime)
