@@ -332,8 +332,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         _state.value = _state.value.copy(isStreaming = false, streamingText = "")
     }
-        streamJob?.cancel()
-        _state.value = _state.value.copy(isStreaming = false, streamingText = "")
 
     fun deleteMessage(id: String) {
         viewModelScope.launch { repo.deleteMessage(id) }
