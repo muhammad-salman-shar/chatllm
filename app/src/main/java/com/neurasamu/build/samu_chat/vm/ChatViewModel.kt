@@ -323,8 +323,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelStream() {
         streamJob?.cancel()
+        val partialText = _state.value.streamingText
+        val conv = _state.value.activeConversation
+        if (partialText.isNotBlank() && conv != null) {
+            viewModelScope.launch {
+                repo.insertMessage(Message(conversationId = conv.id, role = "assistant", content = partialText))
+            }
+        }
         _state.value = _state.value.copy(isStreaming = false, streamingText = "")
     }
+        streamJob?.cancel()
+        _state.value = _state.value.copy(isStreaming = false, streamingText = "")
 
     fun deleteMessage(id: String) {
         viewModelScope.launch { repo.deleteMessage(id) }

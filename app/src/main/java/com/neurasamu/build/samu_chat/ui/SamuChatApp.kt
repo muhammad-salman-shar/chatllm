@@ -10,6 +10,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -350,6 +356,14 @@ private fun ChatScreen(vm: ChatViewModel) {
     }
     val clipboard = LocalContext.current.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
         as android.content.ClipboardManager
+    val tts = remember { android.speech.tts.TextToSpeech(LocalContext.current) { } }
+    val shareText = { text: String ->
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_TEXT, text)
+        }
+        LocalContext.current.startActivity(android.content.Intent.createChooser(intent, "Share via"))
+    }
 
     LaunchedEffect(state.messages.size, state.streamingText.isNotEmpty(), state.isStreaming) {
         val total = state.messages.size +
@@ -370,13 +384,19 @@ private fun ChatScreen(vm: ChatViewModel) {
                 MessageBubble(
                     role = m.role,
                     content = m.content,
+                    imageBase64 = m.imageBase64,
+                    tts = tts,
                     onCopy = {
                         clipboard.setPrimaryClip(
                             android.content.ClipData.newPlainText("msg", m.content)
                         )
                     },
+                    onShare = { shareText(m.content) },
                     onEdit = if (m.role == "user") {
                         { editingMessage = m }
+                    } else null,
+                    onRegenerate = if (m.role == "assistant") {
+                        { vm.regenerateLast() }
                     } else null
                 )
             }
@@ -576,68 +596,175 @@ private fun ThinkingBubble() {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(
-    role: String,
-    content: String,
-    onCopy: (() -> Unit)?,
-    onEdit: (() -> Unit)?
-) {
-    val isUser = role == "user"
-    val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-             else MaterialTheme.colorScheme.surface
-    var menuOpen by remember { mutableStateOf(false) }
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    @Composable
+    private fun MessageBubble(
+        role: String,
+        content: String,
+        imageBase64: String? = null,
+        tts: android.speech.tts.TextToSpeech?,
+        onCopy: (() -> Unit)?,
+        onShare: (() -> Unit)?,
+        onEdit: (() -> Unit)?,
+        onRegenerate: (() -> Unit)?
+    ) {
+        val isUser = role == "user"
+        val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+        val bg = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                 else MaterialTheme.colorScheme.surface
+        var menuOpen by remember { mutableStateOf(false) }
+        var isSelectMode by remember { mutableStateOf(false) }
+        
+        // Thinking tag parsing
+        var showThink by remember { mutableStateOf(false) }
+        val thinkRegex = Regex("<think>(.*?)</think>", RegexOption.DOT_MATCHES_ALL)
+        val hasThink = thinkRegex.containsMatchIn(content)
+        var displayContent = content
+        var thinkContent = ""
+        if (hasThink) {
+            thinkContent = thinkRegex.find(content)?.groupValues?.get(1) ?: ""
+            displayContent = thinkRegex.replace(content, "").trim()
+        }
+        
+        // User input truncation
+        var expanded by remember { mutableStateOf(false) }
+        val words = displayContent.split("\\s+".toRegex())
+        val displayText = if (isUser && !expanded && words.size > 10) {
+            words.take(10).joinToString(" ") + "..."
+        } else displayContent
 
-    Box(Modifier.fillMaxWidth(), contentAlignment = align) {
-        Box {
-            Surface(
-                color = bg,
-                shape = RoundedCornerShape(
-                    topStart = 14.dp, topEnd = 14.dp,
-                    bottomStart = if (isUser) 14.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 14.dp
-                ),
-                modifier = Modifier
-                    .widthIn(max = 320.dp)
-                    .combinedClickable(
-                        onClick = { },
-                        onLongClick = {
-                            if (onCopy != null || onEdit != null) menuOpen = true
-                        }
-                    )
-            ) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = align) {
+            Box {
+                Surface(
+                    color = bg,
+                    shape = RoundedCornerShape(
+                        topStart = 14.dp, topEnd = 14.dp,
+                        bottomStart = if (isUser) 14.dp else 4.dp,
+                        bottomEnd = if (isUser) 4.dp else 14.dp
+                    ),
+                    modifier = Modifier
+                        .widthIn(max = if (isUser) 260.dp else 320.dp)
+                        .combinedClickable(
+                            onClick = { },
+                            onLongClick = { menuOpen = true }
+                        )
+                ) {
                     Column(Modifier.padding(10.dp)) {
-                        Text(content, style = MaterialTheme.typography.bodyMedium)
-                        if (onCopy != null) {
-                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
-                                TextButton(onClick = onCopy, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                                    Icon(Icons.Default.ContentCopy, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                                    Spacer(Modifier.width(3.dp))
-                                    Text("Copy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        if (imageBase64 != null) {
+                            val bitmap = remember(imageBase64) {
+                                try {
+                                    val bytes = android.util.Base64.decode(imageBase64, android.util.Base64.DEFAULT)
+                                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                } catch (e: Exception) { null }
+                            }
+                            if (bitmap != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Attached Image",
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).padding(bottom = 8.dp),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                )
+                            }
+                        }
+                        
+                        if (hasThink) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { showThink = !showThink }) {
+                                Text(
+                                    if (showThink) "Hide thinking" else "Show thinking",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                                Icon(
+                                    if (showThink) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    null,
+                                    Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                            if (showThink) {
+                                Text(
+                                    thinkContent.trim(),
+                                    fontSize = 8.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                        }
+                        
+                        if (isSelectMode) {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(displayText, fontSize = if (isUser) 11.sp else 13.sp)
+                            }
+                        } else {
+                            Text(displayText, fontSize = if (isUser) 11.sp else 13.sp)
+                        }
+                        
+                        if (isUser && words.size > 10) {
+                            Text(
+                                if (expanded) "Show less" else "Show more",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable { expanded = !expanded }.padding(top = 4.dp)
+                            )
+                        }
+                        
+                        // Action Buttons
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { isSelectMode = !isSelectMode }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.SelectAll, "Select", Modifier.size(14.dp), tint = if (isSelectMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                            }
+                            if (onCopy != null) {
+                                IconButton(onClick = onCopy, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.ContentCopy, "Copy", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                }
+                            }
+                            if (onShare != null) {
+                                IconButton(onClick = onShare, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Share, "Share", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                }
+                            }
+                            if (onEdit != null) {
+                                IconButton(onClick = onEdit, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Edit, "Edit", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                }
+                            }
+                            if (!isUser && onRegenerate != null) {
+                                IconButton(onClick = onRegenerate, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Refresh, "Regenerate", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                }
+                            }
+                            if (!isUser && tts != null) {
+                                IconButton(onClick = { tts.speak(displayContent, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null) }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.VolumeUp, "Read Aloud", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                                 }
                             }
                         }
                     }
-            }
-            DropdownMenu(
-                expanded = menuOpen,
-                onDismissRequest = { menuOpen = false }
-            ) {
-                if (onCopy != null) {
-                    DropdownMenuItem(
-                        text = { Text("Copy") },
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
-                        onClick = { onCopy(); menuOpen = false }
-                    )
                 }
-                if (onEdit != null) {
-                    DropdownMenuItem(
-                        text = { Text("Edit & Resend") },
-                        leadingIcon = { Icon(Icons.Default.Edit, null) },
-                        onClick = { onEdit(); menuOpen = false }
-                    )
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false }
+                ) {
+                    if (onCopy != null) {
+                        DropdownMenuItem(
+                            text = { Text("Copy") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                            onClick = { onCopy(); menuOpen = false }
+                        )
+                    }
+                    if (onEdit != null) {
+                        DropdownMenuItem(
+                            text = { Text("Edit & Resend") },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) },
+                            onClick = { onEdit(); menuOpen = false }
+                        )
+                    }
                 }
             }
         }
     }
-}
+
