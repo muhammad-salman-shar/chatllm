@@ -21,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -402,7 +404,7 @@ private fun ChatScreen(vm: ChatViewModel) {
             }
             if (state.streamingText.isNotEmpty()) {
                 item(key = "streaming") {
-                    MessageBubble("assistant", state.streamingText, null, null)
+                    MessageBubble("assistant", state.streamingText, null, null, null, null, null, null)
                 }
             } else if (state.isStreaming) {
                 item(key = "thinking") {
@@ -482,20 +484,25 @@ private fun ChatScreen(vm: ChatViewModel) {
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Default.AttachFile, "attach",
+                    IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.AttachFile, "attach", Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary)
                     }
-                    IconButton(onClick = { imagePicker.launch("image/*") }) {
-                        Icon(Icons.Default.Image, "image",
+                    IconButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Image, "image", Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.primary)
                     }
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
-                        placeholder = { Text("Message…") },
-                        modifier = Modifier.weight(1f),
-                        maxLines = 5
+                        placeholder = { Text("Ask anything...") },
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        maxLines = 5,
+                        shape = RoundedCornerShape(22.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                        )
                     )
                     Spacer(Modifier.width(8.dp))
                     if (state.isStreaming) {
@@ -564,31 +571,37 @@ private fun ChatScreen(vm: ChatViewModel) {
 
 @Composable
 private fun ThinkingBubble() {
-    val dots = remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(400)
-            dots.intValue = (dots.intValue + 1) % 4
-        }
-    }
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "dots")
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Start
+    ) {
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp,
-                bottomStart = 4.dp, bottomEnd = 14.dp),
-            modifier = Modifier.widthIn(max = 320.dp)
+            shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 4.dp, bottomEnd = 14.dp)
         ) {
             Row(
-                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Thinking",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                Spacer(Modifier.width(2.dp))
-                Text(".".repeat(dots.intValue),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary)
+                repeat(3) { i ->
+                    val alpha by transition.animateFloat(
+                        initialValue = 0.3f,
+                        targetValue = 1f,
+                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                            animation = androidx.compose.animation.core.tween(600, easing = androidx.compose.animation.core.LinearEasing),
+                            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+                            initialStartOffset = androidx.compose.animation.core.StartOffset(i * 180)
+                        ),
+                        label = "dot$i"
+                    )
+                    Box(
+                        Modifier
+                            .size(7.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha), RoundedCornerShape(50))
+                    )
+                    if (i < 2) Spacer(Modifier.width(5.dp))
+                }
             }
         }
     }
@@ -602,11 +615,11 @@ private fun ThinkingBubble() {
         role: String,
         content: String,
         imageBase64: String? = null,
-        tts: android.speech.tts.TextToSpeech?,
-        onCopy: (() -> Unit)?,
-        onShare: (() -> Unit)?,
-        onEdit: (() -> Unit)?,
-        onRegenerate: (() -> Unit)?
+        tts: android.speech.tts.TextToSpeech? = null,
+        onCopy: (() -> Unit)? = null,
+        onShare: (() -> Unit)? = null,
+        onEdit: (() -> Unit)? = null,
+        onRegenerate: (() -> Unit)? = null
     ) {
         val isUser = role == "user"
         val align = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
