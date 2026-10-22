@@ -21,6 +21,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.asImageBitmap
@@ -459,18 +461,32 @@ private fun ChatScreen(vm: ChatViewModel) {
 
         Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 4.dp) {
             Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                pendingImageB64?.let {
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
-                    ) {
-                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Image, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Image attached", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                            IconButton(onClick = { pendingImage = null; pendingImageB64 = null }) {
-                                Icon(Icons.Default.Close, null, Modifier.size(16.dp))
+                pendingImageB64?.let { b64 ->
+                    val previewBitmap = remember(b64) {
+                        try {
+                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        } catch (e: Exception) { null }
+                    }
+                    if (previewBitmap != null) {
+                        Box(Modifier.padding(bottom = 6.dp)) {
+                            androidx.compose.foundation.Image(
+                                bitmap = previewBitmap.asImageBitmap(),
+                                contentDescription = "Preview",
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(16.dp)
+                                    .background(Color(0xFFE53935), RoundedCornerShape(50))
+                                    .clickable { pendingImage = null; pendingImageB64 = null },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Close, "Remove", Modifier.size(10.dp), tint = Color.White)
                             }
                         }
                     }
@@ -535,11 +551,7 @@ private fun ChatScreen(vm: ChatViewModel) {
                             onClick = {
                                 val t = input.trim()
                                 if (t.isNotEmpty() || pendingAttachment != null || pendingImageB64 != null) {
-                                    val msg = if (pendingAttachment != null)
-                                        t + "\n\n[attachment: " + (pendingAttachmentName ?: "file") + "]"
-                                    else t
-                                    val fallback = "[attachment: " + (pendingAttachmentName ?: "file") + "]"
-                                    vm.sendMessage(if (msg.isBlank()) fallback else msg, pendingImageB64, pendingImageMime)
+                                    vm.sendMessage(t.ifBlank { " " }, pendingImageB64, pendingImageMime)
                                     input = ""
                                     pendingAttachment = null
                                     pendingAttachmentName = null
@@ -643,6 +655,7 @@ private fun ThinkingBubble() {
                  else MaterialTheme.colorScheme.surface
         var menuOpen by remember { mutableStateOf(false) }
         var isSelectMode by remember { mutableStateOf(false) }
+        var ttsPlaying by remember { mutableStateOf(false) }
         
         // Thinking tag parsing
         var showThink by remember { mutableStateOf(false) }
@@ -687,36 +700,64 @@ private fun ThinkingBubble() {
                                 } catch (e: Exception) { null }
                             }
                             if (bitmap != null) {
+                                var showLightbox by remember { mutableStateOf(false) }
                                 androidx.compose.foundation.Image(
                                     bitmap = bitmap.asImageBitmap(),
                                     contentDescription = "Attached Image",
-                                    modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).padding(bottom = 8.dp),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { showLightbox = true }
+                                        .padding(bottom = 6.dp),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                 )
+                                if (showLightbox) {
+                                    Dialog(onDismissRequest = { showLightbox = false }) {
+                                        Box(
+                                            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.92f)).clickable { showLightbox = false },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            androidx.compose.foundation.Image(
+                                                bitmap = bitmap.asImageBitmap(),
+                                                contentDescription = "Full Image",
+                                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         
                         if (hasThink) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { showThink = !showThink }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { showThink = !showThink }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
                                 Text(
-                                    if (showThink) "Hide thinking" else "Show thinking",
-                                    fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                )
-                                Icon(
-                                    if (showThink) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    null,
-                                    Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                    if (showThink) "Thinking ▾" else "Thinking ▸",
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                             if (showThink) {
-                                Text(
-                                    thinkContent.trim(),
-                                    fontSize = 8.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        thinkContent.trim(),
+                                        fontSize = 7.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        modifier = Modifier.padding(8.dp),
+                                        lineHeight = 10.sp
+                                    )
+                                }
                             }
                         }
                         
@@ -767,8 +808,21 @@ private fun ThinkingBubble() {
                                 }
                             }
                             if (!isUser && tts != null) {
-                                IconButton(onClick = { tts.speak(displayContent, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.VolumeUp, "Read Aloud", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                IconButton(onClick = {
+                                    if (ttsPlaying) {
+                                        tts.stop()
+                                        ttsPlaying = false
+                                    } else {
+                                        tts.speak(displayContent, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
+                                        ttsPlaying = true
+                                    }
+                                }, modifier = Modifier.size(24.dp)) {
+                                    Icon(
+                                        if (ttsPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                        "Read Aloud",
+                                        Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
                                 }
                             }
                         }
