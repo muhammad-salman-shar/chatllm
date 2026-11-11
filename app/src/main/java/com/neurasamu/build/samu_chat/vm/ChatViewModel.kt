@@ -277,6 +277,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     content = content
                                 )
                             )
+                            // Background Notification Logic
+                            if (com.neurasamu.build.samu_chat.SamuChatApplication.isInBackground) {
+                                try {
+                                    com.neurasamu.build.samu_chat.notifications.NotificationHelper.showReplyNotification(
+                                        getApplication(),
+                                        conv.id,
+                                        conv.title,
+                                        content
+                                    )
+                                } catch (_: Exception) {}
+                            }
                         }
                         _state.value = _state.value.copy(
                             isStreaming = false,
