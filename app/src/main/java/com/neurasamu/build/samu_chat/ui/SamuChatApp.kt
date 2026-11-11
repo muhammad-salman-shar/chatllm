@@ -51,8 +51,8 @@ fun SamuChatApp(
     ) { }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val ctx = androidx.compose.ui.platform.LocalContext.current
-            if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
         }

@@ -18,12 +18,12 @@ class SamuChatApplication : Application(), DefaultLifecycleObserver {
     }
 
     override fun onStop(owner: LifecycleOwner) {
-        super.onStop(owner)
+        super<DefaultLifecycleObserver>.onStop(owner)
         isInBackground = true
     }
 
     override fun onStart(owner: LifecycleOwner) {
-        super.onStart(owner)
+        super<DefaultLifecycleObserver>.onStart(owner)
         isInBackground = false
     }
 }
