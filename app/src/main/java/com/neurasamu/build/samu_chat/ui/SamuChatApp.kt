@@ -354,6 +354,8 @@ private fun EmptyChatState(apiLabel: String) {
 
 @Composable
 private fun ChatScreen(vm: ChatViewModel) {
+    val ctxApp = LocalContext.current
+
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
