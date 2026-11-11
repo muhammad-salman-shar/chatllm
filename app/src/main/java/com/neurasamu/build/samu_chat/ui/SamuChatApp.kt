@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownTypography
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -788,12 +790,29 @@ private fun ThinkingBubble() {
                             }
                         }
                         
+                        val mdTypography = com.mikepenz.markdown.m3.markdownTypography(
+                            text = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = if (isUser) 11.sp else 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            code = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        )
+                        
                         if (isSelectMode) {
                             androidx.compose.foundation.text.selection.SelectionContainer {
-                                Text(displayText, fontSize = if (isUser) 11.sp else 13.sp)
+                                com.mikepenz.markdown.m3.Markdown(
+                                    content = displayText,
+                                    typography = mdTypography
+                                )
                             }
                         } else {
-                            Text(displayText, fontSize = if (isUser) 11.sp else 13.sp)
+                            com.mikepenz.markdown.m3.Markdown(
+                                content = displayText,
+                                typography = mdTypography
+                            )
                         }
                         
                         if (isUser && words.size > 10) {
