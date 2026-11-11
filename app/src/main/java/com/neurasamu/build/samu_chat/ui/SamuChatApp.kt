@@ -46,17 +46,18 @@ fun SamuChatApp(
     onSettingsChange: (com.neurasamu.build.samu_chat.data.AppSettings) -> Unit,
     vm: ChatViewModel = viewModel()
 ) {
+    val ctxApp = androidx.compose.ui.platform.LocalContext.current
     val notifPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(ctxApp, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
+
 
     val state by vm.state.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -68,7 +69,6 @@ fun SamuChatApp(
     var renameConv by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Conversation?>(null) }
     var renameText by remember { mutableStateOf("") }
     var pendingExport by remember { mutableStateOf<com.neurasamu.build.samu_chat.data.Conversation?>(null) }
-    val ctxApp = LocalContext.current
     val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
@@ -358,7 +358,6 @@ private fun ChatScreen(vm: ChatViewModel) {
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<Message?>(null) }
-    val ctxApp = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingAttachment by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingAttachmentName by remember { mutableStateOf<String?>(null) }
