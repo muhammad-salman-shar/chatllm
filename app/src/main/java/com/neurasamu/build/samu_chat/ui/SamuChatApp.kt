@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ExpandMore
@@ -387,11 +388,23 @@ private fun ChatScreen(vm: ChatViewModel) {
         ctxApp.startActivity(android.content.Intent.createChooser(intent, "Share via"))
     }
 
-    LaunchedEffect(state.messages.size, state.streamingText.isNotEmpty(), state.isStreaming) {
-        val total = state.messages.size +
-            (if (state.streamingText.isNotEmpty() || state.isStreaming) 1 else 0)
-        if (total > 0) {
-            try { listState.animateScrollToItem(total - 1) } catch (_: Exception) {}
+    // Professional scrolling logic
+    val isAtBottom by remember {
+        derivedStateOf {
+            if (listState.layoutInfo.totalItemsCount == 0) true
+            else {
+                val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lastVisible >= listState.layoutInfo.totalItemsCount - 2
+            }
+        }
+    }
+
+    LaunchedEffect(state.messages.size, state.isStreaming) {
+        if (isAtBottom) {
+            val total = state.messages.size + (if (state.isStreaming) 1 else 0)
+            if (total > 0) {
+                try { listState.animateScrollToItem(total - 1) } catch (_: Exception) {}
+            }
         }
     }
 
@@ -455,6 +468,20 @@ private fun ChatScreen(vm: ChatViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFFF8080), maxLines = 4)
                     TextButton(onClick = { vm.clearError() }) { Text("Dismiss") }
+                }
+            }
+        }
+
+        if (!isAtBottom && state.messages.isNotEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.Center) {
+                FilledIconButton(
+                    onClick = { scope.launch { listState.animateScrollToItem(state.messages.size - 1) } },
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+                    )
+                ) {
+                    Icon(Icons.Default.ArrowDownward, "Jump to latest", Modifier.size(20.dp))
                 }
             }
         }

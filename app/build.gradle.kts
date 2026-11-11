@@ -43,6 +43,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.navigation:navigation-compose:2.8.4")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.29.0")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-code:0.29.0")
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")
